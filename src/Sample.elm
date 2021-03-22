@@ -8,6 +8,7 @@ import Html.Attributes exposing (..)
 
 import Http exposing (..)
 import Json.Decode exposing (Decoder, at, decodeString, int, list)
+import Json.Encode as JsonEncode
 
 import List exposing (length, map)
 
@@ -23,8 +24,29 @@ checkResult result = case result of
     Err _ -> Error "Error loading estimates"
     Ok data -> EstimatesReceived data
 
+checkPostResult : (Result Http.Error Int) -> Msg
+checkPostResult result = case result of
+    Err _ -> Error "Error adding estimate"
+    Ok _ -> EstimateAdded
+
 estimateDecoder : Decoder (List Int)
 estimateDecoder = Json.Decode.list (at [ "id" ] int)
+
+estimatePostDecoder : Decoder Int
+estimatePostDecoder = at [ "id" ] int
+
+loadEstimates : Cmd Msg
+loadEstimates = Http.get
+    { url = "http://localhost:8080/estimations"
+    , expect = Http.expectJson checkResult estimateDecoder
+    }
+
+addEstimate : Int -> Cmd Msg
+addEstimate id = Http.post    
+    { url = "http://localhost:8080/estimations"
+    , body = jsonBody (JsonEncode.object [("id", JsonEncode.int id)])
+    , expect = Http.expectJson checkPostResult estimatePostDecoder
+    }
 
 initModel : () -> ( Model, Cmd Msg )
 initModel _ = (
@@ -32,10 +54,7 @@ initModel _ = (
     , estimates = []
     , isButtonDisabled = True
     , error = Nothing
-  }, Http.get
-      { url = "http://localhost:8080/estimationss"
-      , expect = Http.expectJson checkResult (estimateDecoder) 
-      } )
+  }, loadEstimates )
 
 main : Program () Model Msg
 main =
@@ -50,6 +69,7 @@ type Msg =
   AddEstimate Int | 
   ChangeId String |
   EstimatesReceived (List Int) | 
+  EstimateAdded |
   Error String
 
 subscriptions : Model -> Sub Msg
@@ -59,7 +79,7 @@ update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     AddEstimate id ->
-      ({ model | estimates = model.estimates ++ [id], inputValue = Nothing }, Cmd.none)
+      (model, addEstimate id)
     ChangeId id -> 
       let iv = case id of
                  "" -> Nothing
@@ -70,6 +90,8 @@ update msg model =
         ({ model | inputValue = iv, isButtonDisabled = iv == Nothing }, Cmd.none)
     EstimatesReceived data -> 
         ({ model | estimates = data }, Cmd.none)
+    EstimateAdded -> 
+        (model, loadEstimates)
     Error message -> 
         ({ model | error = Just message }, Cmd.none)
 
